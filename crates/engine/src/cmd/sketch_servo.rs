@@ -17,6 +17,7 @@ use crate::{
 };
 
 pub static COMMANDS: &[CommandSpec] = &[CommandSpec::new("sketch.servo_mount", "Servo Mount", servo_mount)
+    .at("SKETCH", "CREATE")
     .icon("rect_center")
     .enabled(in_sketch)
     .params(concat!(

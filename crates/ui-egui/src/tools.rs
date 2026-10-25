@@ -29,6 +29,7 @@ pub const MODIFIERS: &[ToolModifiers] = &[
     ToolModifiers { tool: "sketch.slot.center_to_center", scopes: DRAW_SCOPES, bindings: &[], audit: Audit::Implemented },
     ToolModifiers { tool: "sketch.slot.overall", scopes: DRAW_SCOPES, bindings: &[], audit: Audit::Implemented },
     ToolModifiers { tool: "sketch.point", scopes: DRAW_SCOPES, bindings: &[], audit: Audit::Implemented },
+    ToolModifiers { tool: "sketch.servo_mount", scopes: DRAW_SCOPES, bindings: &[], audit: Audit::Implemented },
     ToolModifiers { tool: "sketch.dimension", scopes: DRAW_SCOPES, bindings: &[], audit: Audit::Implemented },
     // Constraint tools: pick-only; no tool-specific modifier chords.
     ToolModifiers { tool: "sketch.constraint.horizontal_vertical", scopes: &[], bindings: &[], audit: Audit::VerifiedNoOp },
@@ -108,6 +109,7 @@ impl Tool {
             "sketch.slot.center_to_center" => ("sketch.slot.center_to_center", Kind::Draw(3)),
             "sketch.slot.overall" => ("sketch.slot.overall", Kind::Draw(3)),
             "sketch.point" => ("sketch.point", Kind::Draw(1)),
+            "sketch.servo_mount" => ("sketch.servo_mount", Kind::Draw(1)),
             "sketch.dimension" => ("sketch.dimension", Kind::Dimension),
             "sketch.constraint.horizontal_vertical" => ("sketch.constraint.horizontal_vertical", Kind::HorizontalVertical),
             "sketch.constraint.fix" => ("sketch.constraint.fix", Kind::Pick(1)),
@@ -142,6 +144,7 @@ pub fn hint(id: &str) -> String {
         "sketch.line" => "Line: click points; right-click or Esc to finish".into(),
         "sketch.rectangle.two_point" => "Rectangle: click two opposite corners".into(),
         "sketch.rectangle.center" => "Center rectangle: click the centre, then a corner".into(),
+        "sketch.servo_mount" => "Servo mount: click the centre of an MG90S case cut-out and its two tab holes".into(),
         "sketch.rectangle.rounded" => "Rounded rectangle: click two opposite corners (Tab to the radius box to type the corner radius)".into(),
         "sketch.rectangle.three_point" => "3-point rectangle: click two points of one edge, then the width".into(),
         "sketch.circle.center" => "Circle: click the centre, then a point on the circle".into(),
@@ -526,6 +529,7 @@ fn run_shape(app: &mut SolveApp, t: &Tool) -> Result<Vec<String>, String> {
             Some(id) if ["mid:", "on:", "vertex:"].iter().any(|k| id.starts_with(k)) => json!({"point": id}),
             _ => json!({"point": xy(&p[0])}),
         },
+        "sketch.servo_mount" => json!({"center": xy(&p[0])}),
         _ => return Err(format!("drawing {} is not supported", t.cmd)),
     };
     let result = draw(app, t, params)?;
