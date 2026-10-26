@@ -238,6 +238,30 @@ fn construction_toggle_takes_shapes_out_of_profiles_and_back() {
 }
 
 #[test]
+fn circles_and_arcs_honour_construction() {
+    let cases = [
+        ("sketch.arc.center_point", json!({"center": [0, 0], "start": [8, 0], "end": [-8, 0]})),
+        ("sketch.arc.center_point", json!({"center": [0, 0], "start": [8, 0], "sweep": -90})),
+        ("sketch.arc.three_point", json!({"start": [8, 0], "end": [-8, 0], "through": [0, 8]})),
+        ("sketch.circle.two_point", json!({"p0": [-8, 0], "p1": [8, 0]})),
+        ("sketch.circle.three_point", json!({"p0": [8, 0], "p1": [0, 8], "p2": [-8, 0]})),
+    ];
+    for (cmd, params) in cases {
+        for construction in [false, true] {
+            let mut s = new_sketch();
+            let mut p = params.clone();
+            if construction {
+                p["construction"] = json!(true);
+            }
+            run(&mut s, cmd, p);
+            let sk = sketch(&s);
+            let curve = sk.curves.last().expect("created curve");
+            assert_eq!(curve.construction, construction, "{cmd} {params}");
+        }
+    }
+}
+
+#[test]
 fn centerline_can_become_construction_directly() {
     let mut s = new_sketch();
     let l = curve_ids(&run(&mut s, "sketch.line", json!({"points": [[0, 0], [20, 0]]})));
@@ -1445,6 +1469,27 @@ fn a_drag_out_of_decomposition_budget_takes_short_steps() {
         }
     }
     assert_eq!(flips, 0);
+}
+
+/// A live frame whose numerical solves have done their share takes no more held solves. Before,
+/// a large sketch's frame could run 64 failing held solves of 150 ms each (10 s), where the
+/// geometry couldn't follow. Progress so far stays and asks for another frame (`retry`).
+#[test]
+fn a_live_frame_stops_once_its_numerical_solves_are_spent() {
+    let start = hung_arm();
+    let h = pt(&start, "eh.end");
+    let far = hung_hand_target(&start, 2.0, 1.5);
+    let drag = |s: &mut Session| run(s, "sketch.drag", json!({"entity": "eh.end", "from": [h.x, h.y], "to": [far.x, far.y], "live": true}));
+    let mut s = hung_arm();
+    drag(&mut s);
+    let whole = super::drag::last_drag::get();
+    let mut s = hung_arm();
+    let r = super::drag::last_drag::with_frame_numeric(1, || drag(&mut s));
+    let short = super::drag::last_drag::get();
+    assert!(short.numeric && short.count < whole.count, "{short:?} against {whole:?}");
+    // What it reached stays, and asks for the next frame.
+    let reached = r["reached"].as_f64().unwrap_or(0.0);
+    assert!(reached > 0.0 && reached < 1.0 && r["retry"] == json!(true), "{r}");
 }
 
 /// All the held solves of one live frame, halvings included, share one decomposition budget:

@@ -10,7 +10,7 @@ use solidcraft_doc::{Dir, FacePick, Position};
 use solidcraft_geom::Vec3;
 
 use super::{CommandSpec, not_in_sketch};
-use crate::params::{bad, bool_, expr, req_expr, str_, string_list, vec2, vec3};
+use crate::params::{bad, bool_, expr, expr_problem, req_expr, str_, string_list, vec2, vec3};
 use crate::schema::features::{BoxParams, ExtrudeParams, FeatureResult};
 use crate::schema::{TypedContract, output_schema_for};
 use crate::{EngineError, Result, Session};
@@ -19,7 +19,7 @@ const BOX_CONTRACT: TypedContract<BoxParams> = TypedContract::new();
 const EXTRUDE_CONTRACT: TypedContract<ExtrudeParams> = TypedContract::new();
 
 pub static COMMANDS: &[CommandSpec] = &[
-    CommandSpec::new("solid.extrude", "Extrude", crate::checked!("solid.extrude", EXTRUDE_CONTRACT, extrude))
+    CommandSpec::new("solid.extrude", "Extrude", crate::checked!("solid.extrude", extrude))
         .at("SOLID", "CREATE")
         .icon("extrude")
         .key("E")
@@ -35,7 +35,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         .icon("sweep")
         .params("sketch: profile sketch; profiles?; path_sketch: sketch; path: [curve ids in order]; orientation?: perpendicular (default: square to the path, turning with it) | parallel (as drawn: the profile moves without turning; the path must keep crossing its plane) | [x,y,z] (square to the path, its turn about the path fixed by this direction); twist?: angle expr (the profile turns this much about the path over its length; within 4 turns); scale?: expr (the profile's scale at the end, linear along the path; 0.01…100); rails?: [{sketch?: sketch (default path_sketch), curves: [curve ids in order]}] (guide rails, one or two, each meeting every plane square to the path once along it, from the end nearest the path's start: one rail turns the profile so its point where the rail starts stays on the rail and scales it with the rail's distance from the path; two rails carry it between them, its points where they start staying on both; rails take the default orientation, no twist and no scale, and a path without sharp corners); rail_fit?: scale (default: the profile grows and shrinks evenly) | stretch (only across to the rail, between the rails); operation?, targets?, name?, body_name?"),
     CommandSpec::new("solid.loft", "Loft", loft).at("SOLID", "CREATE").icon("loft").params("sections: [{sketch, profiles?} | {sketch, point: id} (an apex)] (2…50, in order; matching hole counts, no holes at an apex); rails?: [{sketch, curves: [ids in order]}] (one or two guide rails from the first section to the last, through every section's outline: the loft follows them between the sections; not with sections that have holes); rail_fit?: scale|stretch (default scale: with one rail the sections grow evenly with the rail's distance from their middle, with two with the distance between the rails; stretch: only that way); operation?, targets?, name?, body_name?"),
-    CommandSpec::new("solid.box", "Box", crate::checked!("solid.box", BOX_CONTRACT, prim_box))
+    CommandSpec::new("solid.box", "Box", crate::checked!("solid.box", prim_box))
         .at("SOLID", "CREATE")
         .icon("box")
         .contract(&BOX_CONTRACT)
@@ -68,7 +68,7 @@ pub static COMMANDS: &[CommandSpec] = &[
         .at("SOLID", "CREATE")
         .icon("hole")
         .key("H")
-        .params("position: [x,y,z] on a face (numbers, or length expressions the hole follows) | sketch + points: [sketch point ids] (one hole each, perpendicular to the sketch, into the material on whichever side of the sketch plane it is) | sketch alone (every sketch point: standalone points and circle centres); flip?: bool (sketch points: drill to the other side); single?: bool (with one sketch point: a Single hole that follows the point, drilled into the face there); direction?: [x,y,z] (default: into the face, against its outward normal; one that leaves the face is mirrored into it; ignored with sketch points unless single); diameter | thread (a tapped hole: metric major minus pitch or tabulated UNC/UNF, G or Rp cut-tap drill) | clearance: \"M6\" with fit?: close|normal|loose (ISO 273); depth? (default through all) | to?: [x,y,z] (To Object: drill to that face or point); references?: [{edge: [x,y,z] on a straight edge of the face, distance: expr}] (at most two; the centre goes that far from each edge's line, in the face's plane, and follows the edges; with a numeric position only); type?: simple|drilled|counterbore|countersink; tip_angle?; cb_diameter?, cb_depth?; cs_diameter?, cs_angle?; thread?: \"M6\" or \"1/4-20 UNC\" (cosmetic); targets?: [body] (the bodies to drill; holes at the points of a sketch on a body's face default to that body, found along the holes' direction on it alone; explicit targets or participants override, [\"*\"] every body)"),
+        .params("position: [x,y,z] on a face (numbers, or length expressions the hole follows) | sketch + points: [sketch point ids] (one hole each, perpendicular to the sketch, into the material on whichever side of the sketch plane it is) | sketch alone (every sketch point: standalone points and circle centres); flip?: bool (sketch points: drill to the other side); single?: bool (with one sketch point: a Single hole that follows the point, drilled into the face there); direction?: [x,y,z] (default: into the face, against its outward normal; one that leaves the face is mirrored into it; ignored with sketch points unless single); diameter | thread (a tapped hole: metric major minus pitch or tabulated UNC/UNF, G or Rp cut-tap drill) | clearance: \"M6\" with fit?: close|normal|loose (ISO 273); depth? (default through all) | to?: [x,y,z] (To Object: drill to that face or point); references?: [{edge: [x,y,z] on a straight edge of the face, distance: expr}] (at most two; the centre goes that far from each edge's line, in the face's plane, and follows the edges; with a numeric position only); type?: simple|drilled|counterbore|countersink; tip_angle?; cb_diameter?, cb_depth?; cs_diameter?, cs_angle?; thread?: \"M6\" or \"1/4-20 UNC\" (cosmetic); thread_depth?: positive length independent of drill depth (default: full useful cylindrical wall; must fit that wall); targets?: [body] (the bodies to drill; holes at the points of a sketch on a body's face default to that body, found along the holes' direction on it alone; explicit targets or participants override, [\"*\"] every body)"),
     CommandSpec::new("solid.pipe", "Pipe", pipe)
         .at("SOLID", "CREATE")
         .icon("pipe")
@@ -104,7 +104,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec::new("construct.plane.offset", "Offset Plane", plane_offset)
         .at("SOLID", "CONSTRUCT")
         .icon("plane")
-        .params("base: XY|XZ|YZ|plane name, or a planar face {face: [x,y,z], body?, index?, path?}; offset: expr; name?"),
+        .params("base: XY|XZ|YZ|plane name, or a planar face {face: [x,y,z], body?, index?, path?}; offset: expr, or through: a point ref (vertex, sketch point, construction point) the plane goes through, parallel to base; name?"),
     CommandSpec::new("construct.plane.at_angle", "Plane at Angle", plane_angle)
         .at("SOLID", "CONSTRUCT")
         .icon("plane_angle")
@@ -208,10 +208,18 @@ fn auto_operation_in(s: &Session, p: &Value, world_faces: bool) -> Option<&'stat
     } else {
         extrude_base(s, p)?
     };
+    // The extrude starts at its From Object or start offset, not at the profile: probe from
+    // there (#467). To an object it then reaches only from that start.
+    let start = match p.get("from").and_then(vec3) {
+        Some(from) if grouped.is_none() => (from - base).dot(n),
+        _ => expr(p, "start_offset").and_then(|e| s.doc.eval(&e, Kind::Length).ok()).unwrap_or(0.0),
+    };
+    let start = if start.is_finite() { start } else { 0.0 };
+    let base = base + n * start;
     let d = if grouped.is_some() && p.get("to").is_some() {
         (p.get("to").and_then(vec3)? - base).dot(n)
     } else if let Some(d) = extrude_reach(s, p) {
-        d
+        if p.get("to").is_some() { d - start } else { d }
     } else {
         through_all_reach(&st, p, base)?
     };
@@ -1473,6 +1481,57 @@ fn combine(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 fn move_bodies(s: &mut Session, p: &Value) -> Result<Value> {
+    if let Some(plan) = crate::frames::placements_moved(s, p) {
+        return move_placements(s, p, plan);
+    }
+    move_body_feature(s, p)
+}
+
+/// A move of several placements of one part (`frames::placements_moved`, #4768): each placement
+/// moved in the world by the move's translation and turn (about the world origin, as the Move
+/// feature turns bodies), and the root component's bodies listed moved as bodies, in one step.
+fn move_placements(s: &mut Session, p: &Value, plan: crate::frames::PlacementMove) -> Result<Value> {
+    let cmd = "solid.move";
+    let length = |v: &Value| -> Result<f64> {
+        match v {
+            Value::Number(n) => n.as_f64().ok_or_else(|| bad(cmd, "translate entries must be numbers or expressions")),
+            Value::String(e) => s.doc.eval(e, Kind::Length).map_err(|e| bad(cmd, format!("translate: {e}"))),
+            _ => Err(bad(cmd, "translate entries must be numbers or expressions")),
+        }
+    };
+    let translate = match p.get("translate") {
+        Some(Value::Array(a)) if a.len() == 3 => a.iter().map(length).collect::<Result<Vec<f64>>>()?,
+        None => vec![0.0; 3],
+        _ => return Err(bad(cmd, "`translate` must be [x, y, z]")),
+    };
+    let angle = match expr(p, "angle") {
+        Some(a) => Some(s.doc.eval(&a, Kind::Angle).map_err(|e| bad(cmd, format!("angle: {e}")))?),
+        None => None,
+    };
+    let spec = super::find_command("occurrence.move").ok_or_else(|| EngineError::UnknownCommand("occurrence.move".into()))?;
+    let mut moved = Vec::new();
+    for path in &plan.paths {
+        let Some(&occurrence) = path.last() else { continue };
+        let mut q = json!({"occurrence": occurrence, "path": path, "space": "world", "translate": translate});
+        if let Some(axis) = p.get("axis") {
+            q["axis"] = axis.clone();
+        }
+        if let Some(angle) = angle {
+            q["angle"] = json!(angle);
+        }
+        spec.run_nested(s, &q)?;
+        moved.push(occurrence);
+    }
+    let mut out = json!({"placements": moved});
+    if !plan.bodies.is_empty() {
+        let mut rest = p.clone();
+        rest["bodies"] = json!(plan.bodies);
+        out["bodies"] = move_body_feature(s, &rest)?;
+    }
+    Ok(out)
+}
+
+fn move_body_feature(s: &mut Session, p: &Value) -> Result<Value> {
     let cmd = "solid.move";
     let bodies = string_list(p, "bodies");
     if bodies.is_empty() {
@@ -1803,19 +1862,35 @@ pub(super) fn plane_param(s: &Session, v: Option<&Value>, cmd: &str) -> Result<s
 }
 
 fn plane_offset(s: &mut Session, p: &Value) -> Result<Value> {
+    use solidcraft_doc::PlaneRef;
     let cmd = "construct.plane.offset";
-    let d = req_expr(cmd, p, "offset")?;
-    check_expr(s, &d, Kind::Length, cmd, "offset")?;
+    // Through a point, or at a distance along the base's normal.
+    let through = match p.get("through").filter(|t| !t.is_null()) {
+        Some(_) if p.get("offset").is_some_and(|o| !o.is_null()) => return Err(bad(cmd, "give `offset` or `through`, not both")),
+        Some(t) => Some(super::construct::geo(s, Some(t), cmd, "through")?),
+        None => None,
+    };
+    let distance = match &through {
+        Some(_) => Default::default(),
+        None => {
+            let d = req_expr(cmd, p, "offset")?;
+            check_expr(s, &d, Kind::Length, cmd, "offset")?;
+            d
+        }
+    };
+    let offset = move |base: PlaneRef| match through {
+        Some(point) => PlaneRef::ThroughPoint { base: Box::new(base), point: Box::new(point) },
+        None => PlaneRef::Offset { base: Box::new(base), distance },
+    };
     // A planar body face: attached exactly, as a sketch on that face is, so the plane follows it.
     if let Some(face) = p.get("base").filter(|b| b.get("face").is_some()) {
         let base = super::sketch::face::capture(s, face, cmd)?;
         super::sketch::face::capture_positions(s, &base)?;
-        let kind = FeatureKind::ConstructionPlane { plane: solidcraft_doc::PlaneRef::Offset { base: Box::new(base), distance: d } };
         // The capture is already in the authoring frame.
-        return add_feature_in(s, p, kind, false);
+        return add_feature_in(s, p, FeatureKind::ConstructionPlane { plane: offset(base) }, false);
     }
     let base = plane_param(s, p.get("base"), cmd)?;
-    add_feature(s, p, FeatureKind::ConstructionPlane { plane: solidcraft_doc::PlaneRef::Offset { base: Box::new(base), distance: d } })
+    add_feature(s, p, FeatureKind::ConstructionPlane { plane: offset(base) })
 }
 
 fn plane_angle(s: &mut Session, p: &Value) -> Result<Value> {
@@ -2054,6 +2129,19 @@ fn hole(s: &mut Session, p: &Value) -> Result<Value> {
             fine_only_hint(t).unwrap_or_else(|| format!("unknown tapped thread `{t}` (ISO metric or a catalogued UNC/UNF, G or Rp size)")),
         ));
     }
+    let thread_depth = match p.get("thread_depth") {
+        None | Some(Value::Null) => None,
+        Some(_) => Some(req_expr(cmd, p, "thread_depth")?),
+    };
+    if let Some(d) = &thread_depth {
+        if thread.is_none() {
+            return Err(bad(cmd, "`thread_depth` requires `thread` (a tapped hole)"));
+        }
+        let depth = s.doc.eval(d, Kind::Length).map_err(|e| bad(cmd, format!("`thread_depth`: {e}")))?;
+        if !depth.is_finite() || depth <= 0.0 {
+            return Err(bad(cmd, "`thread_depth` must be finite and positive"));
+        }
+    }
     // A position given as length expressions (#1678), say `["leg_h*0.4", "width/2", "t"]`: kept,
     // so the hole follows the parameters; drilled where they evaluate now.
     let at: Option<solidcraft_doc::PointExpr> = match p.get("position").and_then(Value::as_array) {
@@ -2090,6 +2178,14 @@ fn hole(s: &mut Session, p: &Value) -> Result<Value> {
         (_, Some(x)) => x,
         (None, None) => return Err(bad(cmd, "`position` must be [x, y, z], numbers or length expressions (or give `sketch` and `points`)")),
     };
+    // A hole starts on a face: a point off every face (past a body's edge) would drill a hole
+    // nobody picked, and cutting across an edge that way is slow.
+    if points.is_none() && !super::face::on_a_face(s, position) {
+        return Err(bad(
+            cmd,
+            format!("`position` [{}, {}, {}] is not on a face of a body; pick a point on the face to drill", position.x, position.y, position.z),
+        ));
+    }
     let direction = match (p.get("direction").and_then(vec3), &points) {
         (None, Some((sp, _, d))) if !sp.single => *d,
         (d, _) => match d {
@@ -2150,10 +2246,13 @@ fn hole(s: &mut Session, p: &Value) -> Result<Value> {
             _ => solidcraft_doc::HoleKind::Simple,
         },
         "drilled" => solidcraft_doc::HoleKind::Drilled { tip_angle: expr(p, "tip_angle").unwrap_or_else(|| "118 deg".into()) },
-        "counterbore" => solidcraft_doc::HoleKind::Counterbore { cb_diameter: get("cb_diameter")?, cb_depth: get("cb_depth")? },
+        "counterbore" => {
+            solidcraft_doc::HoleKind::Counterbore { cb_diameter: get("cb_diameter")?, cb_depth: get("cb_depth")?, tip_angle: expr(p, "tip_angle") }
+        }
         "countersink" => solidcraft_doc::HoleKind::Countersink {
             cs_diameter: get("cs_diameter")?,
             cs_angle: expr(p, "cs_angle").unwrap_or_else(|| "90 deg".into()),
+            tip_angle: expr(p, "tip_angle"),
         },
         other => return Err(bad(cmd, format!("unknown hole type `{other}`"))),
     };
@@ -2193,6 +2292,7 @@ fn hole(s: &mut Session, p: &Value) -> Result<Value> {
             hole: kind,
             points: points.map(|x| x.0),
             thread,
+            thread_depth,
             to: to.map(FacePick),
             references,
         },
@@ -2214,7 +2314,7 @@ fn hole_reference_params(s: &Session, p: &Value, cmd: &str) -> Result<Vec<solidc
             .get("edge")
             .and_then(vec3)
             .ok_or_else(|| bad(cmd, format!("`references[{i}].edge` must be a point [x, y, z] on a straight edge of the face")))?;
-        let distance = expr(r, "distance").ok_or_else(|| bad(cmd, format!("`references[{i}].distance` must be a number or an expression")))?;
+        let distance = expr(r, "distance").ok_or_else(|| bad(cmd, format!("`references[{i}].distance` {}", expr_problem(r.get("distance")))))?;
         check_expr(s, &distance, Kind::Length, cmd, "references")?;
         out.push(solidcraft_doc::HoleReference { edge: Position(edge), distance });
     }
@@ -2385,7 +2485,7 @@ pub(super) fn sweep_options(s: &Session, p: &Value, cmd: &str) -> Result<(SweepO
     let scale = match p.get("scale") {
         None | Some(Value::Null) => None,
         Some(_) => {
-            let k = expr(p, "scale").ok_or_else(|| bad(cmd, "`scale` must be a number or an expression"))?;
+            let k = req_expr(cmd, p, "scale")?;
             let v = s.doc.eval(&k, Kind::Unitless).map_err(|e| bad(cmd, format!("scale: {e}")))?;
             let range = solidcraft_kernel::SweepControl::MIN_SCALE..=solidcraft_kernel::SweepControl::MAX_SCALE;
             if !(v.is_finite() && range.contains(&v)) {

@@ -2070,3 +2070,47 @@ fn joint_drive_and_refresh_do_not_repeat_dof_analysis() {
         assert_eq!(*s.doc, *before);
     }
 }
+
+/// A parameter change solves the joints once: the refresh that follows the command finds the
+/// design and the model as the command's own solve left them (the sketch the parameter drives
+/// has its new solution stored after that solve). A move the joints undo is still solved.
+#[test]
+fn a_parameter_change_solves_the_joints_once() {
+    let mut s = Session::default();
+    run(&mut s, "parameters.change", json!({"name": "W", "expression": "300 mm"}));
+    run(&mut s, "component.create", json!({"name": "Plate"}));
+    run(&mut s, "solid.box", json!({"length": "W", "width": 100, "height": 1, "corner": [0, 0, 0]}));
+    run(&mut s, "solid.hole", json!({"position": ["W / 2", 50, 1], "diameter": 6}));
+    run(&mut s, "sketch.create", json!({"plane": "XY", "name": "S"}));
+    let r = run(&mut s, "sketch.rectangle.two_point", json!({"p0": [0, 0], "p1": [40, 30]}));
+    let bottom = r["curves"][0].as_str().unwrap_or_default().to_string();
+    run(&mut s, "sketch.dimension", json!({"entities": [bottom], "value": "W / 10"}));
+    run(&mut s, "sketch.finish", json!({}));
+    let plate = occ(&s, "Plate");
+    run(&mut s, "occurrence.ground", json!({"occurrence": plate, "grounded": true}));
+    run(&mut s, "component.activate", json!({"component": "root"}));
+    run(&mut s, "component.create", json!({"name": "Bracket"}));
+    run(&mut s, "solid.box", json!({"length": 20, "width": 20, "height": 2, "corner": [100, 200, 0]}));
+    run(&mut s, "solid.hole", json!({"position": [110, 210, 2], "diameter": 6}));
+    let r = run(
+        &mut s,
+        "joint.create",
+        json!({"type": "rigid", "a": {"occurrence": "Plate", "circle": [153, 50, 0.8], "x": [1, 0, 0]},
+               "b": {"occurrence": "Bracket", "circle": [113, 210, 0.4], "x": [1, 0, 0]}}),
+    );
+    assert_eq!(r["errors"].as_array().map(Vec::len), Some(0), "{r}");
+    run(&mut s, "component.activate", json!({"component": "root"}));
+    for w in [400.0, 360.0] {
+        super::solve_counts::take();
+        run(&mut s, "parameters.change", json!({"name": "W", "expression": format!("{w} mm")}));
+        assert_eq!(super::solve_counts::take().0, 1, "W = {w}");
+        let at = place(&s, "Bracket", Vec3::new(110.0, 210.0, 0.0));
+        assert!(near(at, Vec3::new(w / 2.0, 50.0, 1.0)), "W = {w}: the bracket follows the hole, {at:?}");
+    }
+    // Moving the bracket changes no feature, so the model stays; the joint still takes it back.
+    let bracket = occ(&s, "Bracket");
+    super::solve_counts::take();
+    run(&mut s, "occurrence.move", json!({"occurrence": bracket, "translate": [5, 0, 0], "capture": true}));
+    assert!(super::solve_counts::take().0 > 0);
+    assert!(near(place(&s, "Bracket", Vec3::new(110.0, 210.0, 0.0)), Vec3::new(180.0, 50.0, 1.0)));
+}

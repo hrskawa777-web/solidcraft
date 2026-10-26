@@ -21,7 +21,7 @@ pub static COMMANDS: &[CommandSpec] = &[
     CommandSpec::new("body.rename", "Rename Body", rename_body).icon("rename").params("body: its name, name: the new name (features that use the body follow)"),
     CommandSpec::new("sketch.redefine", "Redefine Sketch Plane", redefine_sketch)
         .icon("plane")
-        .params("sketch: id or name; plane: as sketch.create; author_path?: exact owner occurrence ids; explicitly rebinds or freezes the plane while preserving geometry and dimension names"),
+        .params("sketch: id or name; plane: as sketch.create; frame?: as sketch.create; author_path?: exact owner occurrence ids; explicitly rebinds or freezes the plane while preserving geometry and dimension names"),
     CommandSpec::new("browser.group", "New Group", group)
         .icon("folder")
         .params("folder: bodies|sketches|construction; component?: id (default 0); name?; items?: [keys] (they leave other groups)"),
@@ -900,6 +900,8 @@ fn redefine_sketch(s: &mut Session, p: &Value) -> Result<Value> {
     let component = feature.component;
     let index = s.doc.feature_index(id).ok_or_else(|| bad(cmd, "sketch disappeared"))?;
     let author_path = super::sketch::author_path_for_rebind(s, feature, p, cmd)?;
+    let frame = super::sketch::plane_frame(p, cmd)?;
+    let placement = solidcraft_doc::EmbossFace::component_frame(&s.placed_document(), component, &author_path)?;
     let marker = s.doc.marker;
     let mut baseline = s.scratch();
     baseline.doc_mut().marker = Some(index + 1);
@@ -984,7 +986,9 @@ fn redefine_sketch(s: &mut Session, p: &Value) -> Result<Value> {
         }),
         _ => None,
     });
-    Ok(json!({ "sketch": id,"attachment":attachment }))
+    let mut out = json!({ "sketch": id,"attachment":attachment });
+    super::sketch::frame_reply(&mut out, frame, &placement);
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -1416,6 +1420,38 @@ mod tests {
         }
         run(&mut s, "edit.undo", json!({}));
         assert_eq!(s.doc.named_views.len(), 2);
+    }
+
+    #[test]
+    fn the_sketch_of_an_edited_feature_is_shown_without_changing_visibility() {
+        for (command, params) in [("solid.extrude", json!({"distance": 5})), ("solid.revolve", json!({"axis": "y"}))] {
+            let mut s = Session::default();
+            let sketch = run(&mut s, "sketch.create", json!({"plane": "XY"}))["sketch"].as_u64().unwrap();
+            run(&mut s, "sketch.rectangle.two_point", json!({"p0": [2, 0], "p1": [4, 3]}));
+            run(&mut s, "sketch.finish", json!({}));
+            // Another sketch between them: the marker of the edit is not on the edited one's sketch.
+            run(&mut s, "sketch.create", json!({"plane": "XZ"}));
+            run(&mut s, "sketch.rectangle.two_point", json!({"p0": [2, 0], "p1": [4, 3]}));
+            run(&mut s, "sketch.finish", json!({}));
+            let mut params = params;
+            params["sketch"] = json!(sketch);
+            run(&mut s, command, params);
+            run(&mut s, "timeline.roll_to", json!({"position": 2}));
+            for explicitly in [None, Some(true), Some(false)] {
+                if let Some(visible) = explicitly {
+                    run(&mut s, "browser.visibility", json!({"items": [sketch], "visible": visible}));
+                }
+                let before = crate::view::sketch_shown(&s, sketch);
+                assert_eq!(before, explicitly == Some(true), "{command} {explicitly:?}");
+                let visibility = s.visibility.clone();
+                s.feature_edit_sketch = Some(sketch);
+                assert!(crate::view::sketch_shown(&s, sketch), "{command} {explicitly:?}");
+                assert!(crate::view::sketch_shown(&s.scratch(), sketch), "{command} {explicitly:?}");
+                s.feature_edit_sketch = None;
+                assert_eq!(crate::view::sketch_shown(&s, sketch), before, "{command} {explicitly:?}");
+                assert_eq!(s.visibility, visibility);
+            }
+        }
     }
 
     #[test]
