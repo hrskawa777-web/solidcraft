@@ -136,6 +136,9 @@ fn swap_in(app: &mut SolveApp, mut slot: DocSlot) -> DocSlot {
     put_view(app, slot.view);
     // Preferences the session holds go with the user, not the tab (#680).
     app.session.auto_project = out.session.auto_project;
+    // So does a sketch copy: it pastes into the incoming design (copying sketch geometry from
+    // one design to another).
+    app.session.sketch_clipboard = out.session.sketch_clipboard.take();
     // Views cache by revision: the incoming design must not look unchanged.
     app.session.invalidate_view(out_rev);
     app.ui.ribbon_context = None;

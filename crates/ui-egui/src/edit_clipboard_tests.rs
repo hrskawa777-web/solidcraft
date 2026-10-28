@@ -137,6 +137,34 @@ fn ctrl_c_ctrl_v_pastes_the_sketch_selection_at_the_cursor_selected_in_one_undo_
 }
 
 #[test]
+fn sketch_copy_pastes_into_a_sketch_of_another_tab_with_its_dimensions() {
+    let (mut h, rect) = rectangle();
+    clipboard_event(&mut h, egui::Event::Copy, Some([10.0, 5.0]));
+    assert!(h.app.session.sketch_clipboard.is_some(), "{:?}", h.app.status);
+    crate::documents::open_tab(&mut h.app, solidcraft_engine::Session::default()).unwrap();
+    assert!(h.app.session.sketch_clipboard.is_some(), "the copy goes with the user to the new tab");
+    h.app.run("sketch.create", json!({"plane": "XY"})).unwrap();
+    h.frames(2);
+    // Off the viewport: in another design the copy lands at its own coordinates.
+    assert!(super::paste(&mut h.app, None), "{:?}", h.app.status);
+    let pasted = curves(&h);
+    assert_eq!(pasted.len(), 4);
+    assert!(start(&h, &pasted[0]).dist(Vec2::ZERO) < 1e-9, "{:?}", start(&h, &pasted[0]));
+    let sk = h.app.session.doc.sketch(h.app.session.active_sketch.unwrap()).unwrap();
+    let dims = sk.constraints.iter().filter(|c| c.param.is_some()).count();
+    assert_eq!(dims, 2, "the two dimensions come along");
+    // Back in the design it came from, a paste is offset from the original again.
+    h.app.run("sketch.finish", json!({})).unwrap();
+    crate::documents::switch(&mut h.app, 0);
+    assert!(h.app.session.sketch_clipboard.is_some());
+    assert!(super::paste(&mut h.app, None), "{:?}", h.app.status);
+    let mine = curves(&h);
+    assert_eq!(mine.len(), 8);
+    let copy = mine.iter().find(|c| !rect.contains(c)).unwrap();
+    assert!(start(&h, copy).dist(Vec2::ZERO) > 1.0, "offset from the original: {:?}", start(&h, copy));
+}
+
+#[test]
 fn copy_leaves_text_on_the_system_clipboard_so_paste_can_follow() {
     let (mut h, _) = rectangle();
     h.step(&json!({"move": {"sketch": [10, 5]}})).unwrap();

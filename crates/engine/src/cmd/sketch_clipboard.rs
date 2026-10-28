@@ -54,6 +54,9 @@ pub struct ClipConstraint {
 pub struct SketchClip {
     /// The sketch it was copied from.
     pub sketch: u64,
+    /// The design it was copied from ([`Session::design_key`]): the copy goes with the user to
+    /// other tabs, where `sketch` names nothing.
+    pub design: u64,
     pub points: Vec<Vec2>,
     pub curves: Vec<ClipCurve>,
     pub constraints: Vec<ClipConstraint>,
@@ -117,7 +120,7 @@ fn copy(s: &mut Session, p: &Value) -> Result<Value> {
             return Err(bad(cmd, format!("unknown sketch entity `{e}`")));
         }
     }
-    let mut clip = SketchClip { sketch: id, ..Default::default() };
+    let mut clip = SketchClip { sketch: id, design: s.design_key, ..Default::default() };
     // Points: those of the copied curves, then the lone ones, each once.
     let mut pmap: BTreeMap<usize, usize> = BTreeMap::new();
     let take = |q: usize, clip: &mut SketchClip, pmap: &mut BTreeMap<usize, usize>| -> usize {
@@ -245,12 +248,13 @@ fn paste(s: &mut Session, p: &Value) -> Result<Value> {
     }
     let Some(clip) = s.sketch_clipboard.clone() else { return Err(bad(cmd, "nothing copied (sketch.copy first)")) };
     let target = target_sketch(s, p, cmd)?;
+    let home = target == clip.sketch && clip.design == s.design_key;
     let positioned = p.get("at").is_some() || p.get("translate").is_some();
     let t = if let Some(v) = p.get("at") {
         vec2(v).ok_or_else(|| bad(cmd, "`at` must be [x, y]"))? - clip.center
     } else if let Some(v) = p.get("translate") {
         vec2(v).ok_or_else(|| bad(cmd, "`translate` must be [x, y]"))?
-    } else if target == clip.sketch {
+    } else if home {
         let d = paste_step(clip.extent) * f64::from(clip.pastes.saturating_add(1));
         Vec2::new(d, -d)
     } else {
@@ -314,7 +318,7 @@ fn paste(s: &mut Session, p: &Value) -> Result<Value> {
         Ok((curve_ids, lone, cons))
     })?;
     if !positioned
-        && target == clip.sketch
+        && home
         && let Some(c) = s.sketch_clipboard.as_mut()
     {
         c.pastes = c.pastes.saturating_add(1);

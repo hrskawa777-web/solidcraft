@@ -327,6 +327,8 @@ pub struct Session {
     pub clipboard: Vec<solidcraft_doc::Feature>,
     /// Sketch geometry copied with `sketch.copy` (pasted by `sketch.paste`).
     pub sketch_clipboard: Option<cmd::sketch_clipboard::SketchClip>,
+    /// Which open design this is, for a sketch copy carried to another tab (unique per process).
+    pub design_key: u64,
     /// Section Analysis: a view cut by a plane (origin, unit normal; the normal side is hidden).
     pub section: Option<(Vec3, Vec3)>,
     /// Whether the section's cut faces are hatched (`inspect.section`'s `hatch`; on by default).
@@ -437,6 +439,9 @@ const MAX_UNDO: usize = 200;
 const MAX_CHECKPOINTS: usize = 16;
 const MAX_LOG: usize = 2000;
 
+/// The next [`Session::design_key`].
+static NEXT_DESIGN_KEY: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
 impl Default for Session {
     fn default() -> Self {
         Session::new(Document::new("Untitled"))
@@ -495,6 +500,7 @@ impl Session {
             contact_meshes: Default::default(),
             clipboard: Vec::new(),
             sketch_clipboard: None,
+            design_key: NEXT_DESIGN_KEY.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             section: None,
             section_hatch: true,
             colored_components: None,
@@ -527,7 +533,9 @@ impl Session {
         let render_jobs = self.render_jobs.scratch();
         let checkpoints = std::mem::take(&mut self.checkpoints);
         let next_checkpoint = self.next_checkpoint;
+        let sketch_clipboard = self.sketch_clipboard.take();
         *self = fresh;
+        self.sketch_clipboard = sketch_clipboard;
         self.auto_project = auto_project;
         self.param_check = param_check;
         self.render_viewport = render_viewport;
@@ -1159,6 +1167,7 @@ impl Session {
             contact_meshes: self.contact_meshes.clone(),
             clipboard: self.clipboard.clone(),
             sketch_clipboard: self.sketch_clipboard.clone(),
+            design_key: self.design_key,
             section: None,
             section_hatch: true,
             colored_components: None,
